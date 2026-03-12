@@ -15,6 +15,21 @@ assert_command() {
   fi
 }
 
+resolve_python_command() {
+  if command -v python3.11 >/dev/null 2>&1; then
+    printf '%s\n' "python3.11"
+    return
+  fi
+
+  if command -v python3 >/dev/null 2>&1; then
+    printf '%s\n' "python3"
+    return
+  fi
+
+  echo "Missing required command 'python3'. Please install Python 3.11 or newer and make sure it is available in PATH." >&2
+  exit 1
+}
+
 get_file_text_or_empty() {
   local path="$1"
 
@@ -27,9 +42,10 @@ escape_for_osascript() {
   printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g'
 }
 
-assert_command "python3" "Please install Python 3 and make sure it is available in PATH."
 assert_command "pnpm" "Please install pnpm and make sure it is available in PATH."
 assert_command "osascript" "AppleScript support is required on macOS to open Terminal windows."
+
+python_command="$(resolve_python_command)"
 
 venv_path="$project_root/.venv"
 venv_python="$venv_path/bin/python"
@@ -41,7 +57,7 @@ current_frontend_platform="$(uname -s)-$(uname -m)"
 
 if [[ ! -x "$venv_python" ]]; then
   echo "Creating Python virtual environment..."
-  python3 -m venv "$venv_path"
+  "$python_command" -m venv "$venv_path"
 fi
 
 saved_frontend_platform="$(get_file_text_or_empty "$frontend_platform_stamp_path")"
