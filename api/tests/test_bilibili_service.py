@@ -7,7 +7,9 @@ from api.app.services.bilibili import (
     format_duration,
     inspect_collection,
     is_supported_bilibili_url,
+    parse_download_output_paths,
 )
+from api.app import settings as settings_module
 from api.app.settings import AppSettings
 
 
@@ -60,6 +62,36 @@ def test_build_download_command_uses_quality_profile() -> None:
     assert "--concurrent-fragments" in command
     assert "6" in command
     assert "--ffmpeg-location" in command
+    assert "--print" in command
+    assert "after_move:filepath" in command
+
+
+def test_parse_download_output_paths_strips_and_deduplicates() -> None:
+    stdout = "\n/tmp/one.mp4\n/tmp/one.mp4 \n\n/tmp/two.m4a\n"
+
+    assert parse_download_output_paths(stdout) == ["/tmp/one.mp4", "/tmp/two.m4a"]
+
+
+def test_resolve_ffmpeg_prefers_path_lookup(monkeypatch) -> None:
+    monkeypatch.delenv("BILI_ATELIER_FFMPEG_PATH", raising=False)
+    monkeypatch.setattr(settings_module.shutil, "which", lambda command: "/usr/local/bin/ffmpeg")
+    monkeypatch.setattr(settings_module, "KNOWN_FFMPEG_PATHS", [])
+    monkeypatch.setattr(settings_module, "_resolve_imageio_ffmpeg", lambda: None)
+
+    assert settings_module._resolve_ffmpeg() == "/usr/local/bin/ffmpeg"
+
+
+def test_resolve_ffmpeg_falls_back_to_bundled_binary(monkeypatch) -> None:
+    monkeypatch.delenv("BILI_ATELIER_FFMPEG_PATH", raising=False)
+    monkeypatch.setattr(settings_module.shutil, "which", lambda command: None)
+    monkeypatch.setattr(settings_module, "KNOWN_FFMPEG_PATHS", [])
+    monkeypatch.setattr(
+        settings_module,
+        "_resolve_imageio_ffmpeg",
+        lambda: "/tmp/bundled-ffmpeg",
+    )
+
+    assert settings_module._resolve_ffmpeg() == "/tmp/bundled-ffmpeg"
 
 
 def test_inspect_collection_transforms_payload(monkeypatch) -> None:
@@ -73,7 +105,7 @@ def test_inspect_collection_transforms_payload(monkeypatch) -> None:
         allowed_origins=("http://127.0.0.1:5173",),
     )
 
-    def fake_command_json(_: list[str]) -> dict[str, object]:
+    def fake_command_json(_: list[str], *, timeout: float | None = None) -> dict[str, object]:
         return {
             "title": "Sketchbook Series",
             "uploader": "atelier",

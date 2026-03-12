@@ -1,11 +1,14 @@
 from __future__ import annotations
 
 import os
+import shutil
 from dataclasses import dataclass
 from pathlib import Path
 
 
 KNOWN_FFMPEG_PATHS = [
+    Path("/opt/homebrew/bin/ffmpeg"),
+    Path("/usr/local/bin/ffmpeg"),
     Path(r"C:\My_Apps\TRCCCAP\ffmpeg.exe"),
 ]
 
@@ -26,11 +29,48 @@ def _resolve_ffmpeg() -> str | None:
     if env_value and Path(env_value).exists():
         return env_value
 
+    path_value = shutil.which("ffmpeg")
+    if path_value:
+        return path_value
+
     for candidate in KNOWN_FFMPEG_PATHS:
         if candidate.exists():
             return str(candidate)
 
+    bundled_path = _resolve_imageio_ffmpeg()
+    if bundled_path:
+        return bundled_path
+
     return None
+
+
+def _resolve_imageio_ffmpeg() -> str | None:
+    try:
+        from imageio_ffmpeg import get_ffmpeg_exe
+    except ImportError:
+        return None
+
+    try:
+        bundled_path = Path(get_ffmpeg_exe())
+    except Exception:
+        return None
+
+    if bundled_path.exists():
+        return str(bundled_path)
+    return None
+
+
+def _resolve_yt_dlp(project_root: Path) -> str:
+    env_value = os.environ.get("BILI_ATELIER_YT_DLP")
+    if env_value:
+        if Path(env_value).exists() or shutil.which(env_value):
+            return env_value
+
+    local_candidate = project_root / ".venv" / "bin" / "yt-dlp"
+    if local_candidate.exists():
+        return str(local_candidate)
+
+    return "yt-dlp"
 
 
 def get_settings() -> AppSettings:
@@ -44,7 +84,7 @@ def get_settings() -> AppSettings:
     return AppSettings(
         project_root=project_root,
         download_dir=download_dir,
-        yt_dlp_path=os.environ.get("BILI_ATELIER_YT_DLP", "yt-dlp"),
+        yt_dlp_path=_resolve_yt_dlp(project_root),
         ffmpeg_path=_resolve_ffmpeg(),
         max_download_workers=int(os.environ.get("BILI_ATELIER_MAX_DOWNLOAD_WORKERS", default_workers)),
         concurrent_fragments=int(os.environ.get("BILI_ATELIER_CONCURRENT_FRAGMENTS", default_fragments)),

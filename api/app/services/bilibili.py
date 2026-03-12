@@ -118,15 +118,32 @@ def episode_source_url(entry: dict[str, Any], fallback_url: str) -> str:
     return fallback_url
 
 
-def command_json(command: list[str]) -> dict[str, Any]:
-    completed = subprocess.run(
-        command,
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        errors="replace",
-        check=False,
-    )
+def parse_download_output_paths(stdout: str) -> list[str]:
+    paths: list[str] = []
+    seen: set[str] = set()
+    for line in stdout.splitlines():
+        candidate = line.strip()
+        if not candidate or candidate in seen:
+            continue
+        paths.append(candidate)
+        seen.add(candidate)
+    return paths
+
+
+def command_json(command: list[str], *, timeout: float | None = None) -> dict[str, Any]:
+    try:
+        completed = subprocess.run(
+            command,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            check=False,
+            timeout=timeout,
+        )
+    except subprocess.TimeoutExpired as exc:
+        raise HTTPException(status_code=504, detail="调用 yt-dlp 超时，请稍后重试。") from exc
+
     if completed.returncode != 0:
         stderr = completed.stderr.strip() or completed.stdout.strip() or "unknown yt-dlp error"
         raise HTTPException(status_code=400, detail=stderr)
@@ -151,7 +168,8 @@ def inspect_collection(url: str, settings: AppSettings) -> dict[str, Any]:
                 "--dump-single-json",
                 "--no-warnings",
                 url,
-            ]
+            ],
+            timeout=15,
         )
     except HTTPException:
         payload = command_json(
@@ -161,7 +179,8 @@ def inspect_collection(url: str, settings: AppSettings) -> dict[str, Any]:
                 "--flat-playlist",
                 "--no-warnings",
                 url,
-            ]
+            ],
+            timeout=15,
         )
 
     raw_entries = payload.get("entries") or [payload]
@@ -221,6 +240,8 @@ def build_download_command(
         "--merge-output-format",
         "mp4",
         "--no-warnings",
+        "--print",
+        "after_move:filepath",
         "--output",
         output_template,
     ]
@@ -316,6 +337,13 @@ def launch_download_job(
     download_directory: Path,
 ) -> None:
     def run() -> None:
+        if settings.ffmpeg_path is None:
+            detail = "未找到 ffmpeg，无法把 Bilibili 的音频和视频合并成单个文件。请先安装 ffmpeg，或重新安装后端依赖后再试。"
+            for episode in episodes:
+                store.update_item(job_id, episode["id"], status="failed", detail=detail)
+            store.fail_job(job_id, detail)
+            return
+
         def process_episode(episode: dict[str, Any]) -> None:
             episode_id = episode["id"]
             safe_title = sanitize_filename(f"{episode['index']:02d}-{episode['title']}")
@@ -340,7 +368,18 @@ def launch_download_job(
                 store.update_item(job_id, episode_id, status="failed", detail=detail)
                 return
 
-            output_path = str(download_directory / f"{safe_title}.mp4")
+            output_paths = parse_download_output_paths(completed.stdout)
+            if len(output_paths) != 1:
+                detail = "下载完成，但未能生成单个带声音的视频文件，请检查 ffmpeg 是否可用。"
+                store.update_item(job_id, episode_id, status="failed", detail=detail)
+                return
+
+            output_path = output_paths[0]
+            if not Path(output_path).exists():
+                detail = "下载已结束，但无法定位最终输出文件。"
+                store.update_item(job_id, episode_id, status="failed", detail=detail)
+                return
+
             detail = completed.stderr.strip() or "已保存"
             store.update_item(
                 job_id,
