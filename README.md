@@ -40,6 +40,14 @@ On Windows, double-click `start.bat` in the project root. It will:
 - sync backend Python dependencies when `api/requirements.txt` changes
 - open separate terminal windows for the backend and frontend dev servers
 
+On macOS, double-click `start-mac.command` in the project root. It follows the same flow and opens separate Terminal windows for the backend and frontend dev servers.
+
+If Finder does not let you run it directly, grant execute permission once:
+
+```bash
+chmod +x start-mac.command
+```
+
 ## Notes
 
 - This MVP is designed for public or authorized content only.

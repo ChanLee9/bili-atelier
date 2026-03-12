@@ -32,3 +32,36 @@ Use separate commands or PowerShell-compatible sequencing instead of shell separ
 - **Notes**: Switched back to single-purpose PowerShell commands for staging and follow-up steps.
 
 ---
+
+## [ERR-20260312-001] rg-shell-command
+
+**Logged**: 2026-03-12T04:15:00Z
+**Priority**: low
+**Status**: resolved
+**Area**: infra
+
+### Summary
+`rg.exe` is present in this Codex desktop PowerShell environment but cannot be executed successfully.
+
+### Error
+```text
+程序“rg.exe”无法运行: Access is denied
+```
+
+### Context
+- Command attempted: `rg --files`
+- Environment: PowerShell on Windows inside Codex desktop
+
+### Suggested Fix
+Fall back to PowerShell-native file inspection commands when `rg` is blocked in this environment.
+
+### Metadata
+- Reproducible: yes
+- Related Files: D:\Projects\bili-atelier
+
+### Resolution
+- **Resolved**: 2026-03-12T04:16:00Z
+- **Commit/PR**: pending
+- **Notes**: Switched to `Get-ChildItem` and direct file reads for repository inspection.
+
+---
